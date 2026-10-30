@@ -210,4 +210,5 @@ python test_port.py                       # 端口连通
 - 分发修改版或衍生作品时必须同样以 GPL-3.0 开源，并提供源码
 - 不提供任何担保（详见 GPL-3.0 第 15、16 条）
 
-Copyright (C) 2026 yuanshen-123-ui
+版权归**所有著作人**（项目发起人及所有贡献者）所有。
+Copyright (C) 2026 全体著作人（All contributors）
