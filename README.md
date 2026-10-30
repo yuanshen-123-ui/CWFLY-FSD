@@ -193,5 +193,3 @@ python test_port.py                       # 端口连通
 | [CWFLY-ATC](https://github.com/yuanshen-123-ui/CWFLY-ATC) | 管制中心 |
 | [CWFLY-BOT](https://github.com/yuanshen-123-ui/CWFLY-BOT) | QQ 机器人（以 CID 0000 连接本服务器） |
 
-> 本仓库由 CWFLY 主仓库于 2026-10-30 拆分而来，初始提交为当时快照（不含历史）。
-> 姊妹项目：**CTYFLY** —— [CTYFLY-WEB](https://github.com/yuanshen-123-ui/CTYFLY-WEB)
