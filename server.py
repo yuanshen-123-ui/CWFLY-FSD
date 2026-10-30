@@ -33,6 +33,10 @@ RECONNECT_GRACE = 40
 # 会话恢复补播阈值（秒）：断开超过该时长后重连，才向其他客户端补发一次上下线广播，
 # 让机器人/第三方客户端重新识别为「上线」；小于该值的网络抖动不播报，避免刷屏。
 RESUME_ANNOUNCE_MIN = 10.0
+
+# 下线播报延迟（秒）：断开后超过该时长仍未重连，立即向其他客户端广播 #DA/#DP，
+# 让机器人不必等到 40 秒重连窗口过期才播报下线。
+OFFLINE_ANNOUNCE_DELAY = 10.0
 # 可恢复的断开原因（对端 FIN/RST、读超时、客户端主动 #DA/#DP 等）；
 # 管理口 kill、服务端停机、缓冲区攻击等不进入重连窗口，必须立即下线。
 RECONNECTABLE_REASONS = {
@@ -531,6 +535,8 @@ class FSDServer:
             "reason": reason,
             "expires_at": time.time() + RECONNECT_GRACE,
         }
+        # 下线提前播报：10 秒内未重连则广播 #DA/#DP（不必等 40 秒窗口过期）
+        asyncio.ensure_future(self._offline_announce_watchdog(callsign, handler))
         logger.info(
             f"Session kept for reconnect: {callsign} cid={getattr(handler, 'cid', '')} "
             f"reason={reason} window={RECONNECT_GRACE}s "
@@ -590,6 +596,36 @@ class FSDServer:
             self.unregister_client(handler)
         except Exception as e:
             logger.warning(f"Finalize pending session unregister error: {e}")
+
+    async def _offline_announce_watchdog(self, callsign: str, handler: ClientHandler):
+        """断开 10 秒仍未恢复 → 向其他客户端广播下线（#DA/#DP）。
+
+        早于 10 秒恢复的抖动不播报；10~40 秒恢复时，resume 会补发 #DA+#AA 纠正状态。
+        """
+        try:
+            await asyncio.sleep(OFFLINE_ANNOUNCE_DELAY)
+        except asyncio.CancelledError:
+            return
+        pending = self.pending_sessions.get(callsign)
+        if not pending or pending.get("handler") is not handler:
+            return  # 已恢复或已过期，交给其他路径处理
+        if pending.get("offline_announced"):
+            return
+        pending["offline_announced"] = True
+        client_obj = getattr(handler, "client", None)
+        if client_obj is None:
+            return
+        prefix = "#DA" if client_obj.type == CLIENT_ATC else "#DP"
+        for cs, h in list(self.clients.items()):
+            if cs == callsign:
+                continue
+            try:
+                asyncio.ensure_future(h.send(f"{prefix}{callsign}:{cs}\r\n"))
+            except Exception:
+                pass
+        logger.info(
+            f"Offline announced after {OFFLINE_ANNOUNCE_DELAY:.0f}s: {callsign} "
+            f"(still not reconnected)")
 
     def _announce_resume(self, client: ClientHandler, gap: float):
         """会话恢复（断开 >= RESUME_ANNOUNCE_MIN 秒）时向其他客户端补发一次上下线广播。
