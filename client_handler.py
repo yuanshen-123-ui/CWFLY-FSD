@@ -567,7 +567,8 @@ class ClientHandler:
     @staticmethod
     def _fallback_realname(realname: str, cid: str) -> str:
         """姓名兜底：客户端 Real Name 为空、或直接填了 CID 时，改用平台用户名。"""
-        if realname and realname != cid:
+        # 以客户端（EuroScope）填写的 Real Name 为准；仅当为空时才用平台用户名兜底
+        if realname:
             return realname
         try:
             from db import get_username_by_cid
@@ -589,6 +590,14 @@ class ClientHandler:
             return
 
         callsign, _, realname, cid, password = parts[0], parts[1], parts[2], parts[3], parts[4]
+        try:
+            logger.info(
+                "#AA layout: fields=%d f0=%r f1=%r f2=%r f5=%r f6=%r"
+                % (len(parts), parts[0], parts[1], parts[2],
+                   parts[5] if len(parts) > 5 else None,
+                   parts[6] if len(parts) > 6 else None))
+        except Exception:
+            pass
         req_rating, revision = parts[5], parts[6]
 
         err = self._callsign_ok(callsign)
