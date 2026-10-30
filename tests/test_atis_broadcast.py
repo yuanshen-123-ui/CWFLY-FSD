@@ -64,7 +64,7 @@ async def main():
     text = "ZBAA ATIS A\nRWY36L\nWIND 18005KT"
     parts = ["ZBAA_APP", "SERVER", "ATIS", "T", text]
     await atc._handle_cr(parts)
-    await asyncio.sleep(0.05)
+    await asyncio.sleep(1.0)
 
     check("管制员的 ATIS 已存储", atc.client.atis == text, repr(atc.client.atis))
     bot_msgs = [m for m in bot.received if m.startswith("$AX")]

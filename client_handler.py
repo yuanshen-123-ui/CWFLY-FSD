@@ -1086,21 +1086,27 @@ class ClientHandler:
                 if parts[3].upper() == "T":
                     text = ":".join(parts[4:]).strip()
                     if text:
-                        self.client.atis = text
-                        logger.info(f"ATIS received: {self.callsign} ({len(text)} chars)")
-                        # 广播给其他客户端（机器人上线播报的 ATC INFO 依赖这条 $AX；
-                        # 此前只存不广播，导致 $AR 请求早于 ATIS 到达时机器人永远拿不到 ATIS）
-                        try:
-                            payload = text.replace("\n", "^").replace("\r", "")
-                            for h in list(self.server.clients.values()):
-                                if h is self:
-                                    continue
-                                if not getattr(h, "client", None):
-                                    continue
-                                asyncio.ensure_future(
-                                    h.send(f"$AX{self.callsign}:{h.client.callsign}:{payload}\r\n"))
-                        except Exception:
-                            pass
+                        # ATIS 分段聚合：EuroScope 会把一条 ATIS 拆成多条 $CR 发送，
+                        # 直接覆盖会导致只剩最后一段（曾出现 25 字符 + 9 字符 → 只剩 9 字符）
+                        now_ts = time.time()
+                        parts_buf = getattr(self, "_atis_parts", None)
+                        last_ts = getattr(self, "_atis_last_ts", 0.0)
+                        if parts_buf is None or (now_ts - last_ts) > 1.5:
+                            parts_buf = []
+                        self._atis_parts = parts_buf
+                        self._atis_last_ts = now_ts
+                        if text not in parts_buf:
+                            parts_buf.append(text)
+                        self.client.atis = "\n".join(parts_buf)
+                        logger.info(
+                            f"ATIS received: {self.callsign} ({len(text)} chars, "
+                            f"segments={len(parts_buf)}, total={len(self.client.atis)})")
+                        # 聚合完成后延迟 0.8 秒广播一次（避免每段各广播一次 → 机器人只显示最后一段）
+                        task = getattr(self, "_atis_broadcast_task", None)
+                        if task is not None and not task.done():
+                            task.cancel()
+                        self._atis_broadcast_task = asyncio.ensure_future(
+                            self._broadcast_atis_debounced())
                 return
         except Exception:
             pass
@@ -1177,6 +1183,26 @@ class ClientHandler:
             # 回复 ATIS 文本（多行用 ^ 分隔）
             data = target.client.atis.replace("\n", "^").replace("\r", "")
             await self.send(f"$AX{to_cs}:{self.callsign}:{data}\r\n")
+
+    async def _broadcast_atis_debounced(self):
+        """聚合完一轮 ATIS 后，延迟 0.8 秒向其他客户端广播完整文本（$AX）。"""
+        try:
+            await asyncio.sleep(0.8)
+        except asyncio.CancelledError:
+            return
+        atis = getattr(self.client, "atis", "") or ""
+        if not atis:
+            return
+        payload = atis.replace("\n", "^").replace("\r", "")
+        for h in list(self.server.clients.values()):
+            if h is self:
+                continue
+            if not getattr(h, "client", None):
+                continue
+            try:
+                await h.send(f"$AX{self.callsign}:{h.client.callsign}:{payload}\r\n")
+            except Exception:
+                pass
 
     async def _handle_atis_data(self, parts: list):
         """Handle ATIS data published by an ATC.
