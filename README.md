@@ -199,3 +199,15 @@ python test_port.py                       # 端口连通
 | [CWFLY-ATC](https://github.com/yuanshen-123-ui/CWFLY-ATC) | 管制中心 |
 | [CWFLY-BOT](https://github.com/yuanshen-123-ui/CWFLY-BOT) | QQ 机器人（以 CID 0000 连接本服务器） |
 
+---
+
+## 许可证
+
+本项目采用 **GNU General Public License v3.0**（GPL-3.0）开源。
+完整条款见仓库根目录 [LICENSE](LICENSE)；简单说明：
+
+- 允许自由使用、修改、分发本软件（含商业用途）
+- 分发修改版或衍生作品时必须同样以 GPL-3.0 开源，并提供源码
+- 不提供任何担保（详见 GPL-3.0 第 15、16 条）
+
+Copyright (C) 2026 yuanshen-123-ui
