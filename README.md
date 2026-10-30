@@ -201,6 +201,13 @@ python test_port.py                       # 端口连通
 
 ---
 
+## 贡献
+
+欢迎参与！请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)；
+提交 PR 即视为同意 [CLA.md](CLA.md)（你保留自己贡献的版权，同时授予项目发起人再许可能力）。
+
+---
+
 ## 许可证
 
 本项目采用 **GNU General Public License v3.0**（GPL-3.0）开源。
