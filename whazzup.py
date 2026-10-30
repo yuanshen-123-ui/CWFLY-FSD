@@ -96,7 +96,9 @@ class WhazzupGenerator:
 
                     # Segment 2: frequency
                     if c.type == CLIENT_ATC and c.frequency:
-                        freq_mhz = c.frequency / 1000.0
+                        # frequency 已由 % 包转换为 MHz（如 120.600）；
+                        # 仅在确实以 Hz 存储（>1000）时才换算，避免再除 1000 得到 0.121
+                        freq_mhz = c.frequency / 1000.0 if c.frequency > 1000 else c.frequency
                         seg2 = f"{freq_mhz:.3f}"
                     else:
                         seg2 = ""

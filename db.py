@@ -414,6 +414,23 @@ def upsert_controller(cid, callsign, realname, lat, lon,
         return False
 
 
+def get_username_by_cid(cid):
+    """按 CID 取平台用户名（客户端 real name 为空或误填 CID 时兜底）。失败返回空串。"""
+    conn = None
+    try:
+        conn = _conn()
+        with conn.cursor() as cur:
+            cur.execute("SELECT username FROM `User` WHERE cid=%s", (cid,))
+            row = cur.fetchone()
+            return (row[0] or "") if row else ""
+    except Exception as e:
+        logger.warning(f"get_username_by_cid failed: {e}")
+        return ""
+    finally:
+        if conn is not None:
+            _release(conn)
+
+
 def delete_online(callsign):
     """下线: 从 FlightPilot / FlightController 快照表删除该呼号。"""
     if not callsign:

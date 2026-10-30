@@ -564,6 +564,18 @@ class ClientHandler:
                     f"{'ATC' if client_type == CLIENT_ATC else 'PILOT'} level={level}")
         await self._after_auth()
 
+    @staticmethod
+    def _fallback_realname(realname: str, cid: str) -> str:
+        """姓名兜底：客户端 Real Name 为空、或直接填了 CID 时，改用平台用户名。"""
+        if realname and realname != cid:
+            return realname
+        try:
+            from db import get_username_by_cid
+            name = get_username_by_cid(cid)
+            return name or realname
+        except Exception:
+            return realname
+
     async def _handle_add_atc(self, parts: list):
         """Handle #AA - Add ATC (legacy plaintext auth).
 
@@ -610,6 +622,8 @@ class ClientHandler:
         level = min(req, max_lvl)
         if level < 1:
             level = 1
+
+        realname = self._fallback_realname(realname, cid)
 
         self.cid = cid
         self.callsign = callsign
@@ -667,6 +681,8 @@ class ClientHandler:
         level = min(req, max_lvl)
         if level < 1:
             level = 1
+
+        realname = self._fallback_realname(realname, cid)
 
         self.cid = cid
         self.callsign = callsign
