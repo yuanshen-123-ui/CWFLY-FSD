@@ -336,6 +336,7 @@ class ClientHandler:
         await self.send(f"$ERserver:{callsign}:{code:03d}:{env}:{err_str}\r\n")
 
     async def _kick(self, code: int, env: str = ""):
+        self._kicked = True
         """认证失败: 发送错误码后断开连接(踢掉该管制员/机组)。
 
         发 $ER 后短暂停留 0.15s 确保客户端收到错误提示, 再优雅关闭且不等待:
@@ -778,7 +779,7 @@ class ClientHandler:
                 logger.warning(
                     f"Facility check: {self.callsign}(cid={self.cid}, rating={self.client.rating}) "
                     f"tried facility {facility} (requires >={min_rating}), rejected")
-                await self.send_error(ERR_LEVEL, self.callsign)
+                await self._kick(ERR_LEVEL)
                 return
             self.client.frequency = freq
             self.client.facility_type = facility
@@ -1375,6 +1376,8 @@ class ClientHandler:
             pass
 
     async def _disconnect(self, reason: str = "unknown"):
+        if getattr(self, "_kicked", False):
+            reason = "kicked"
         """Clean up on disconnect.
 
         ★ 会话重连（移植自 SimpleFSD session_clean_time）：可恢复的断开先进入

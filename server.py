@@ -390,7 +390,18 @@ class FSDServer:
                     task.cancel()
                 self.pending_sessions.pop(client.callsign, None)
                 # 恢复：把旧会话的数据对象交给新连接
+                new_rating = getattr(getattr(client, "client", None), "rating", None)
+                new_realname = getattr(getattr(client, "client", None), "realname", None)
                 client.client = old_client
+                # 修复：恢复会话时用本次登录的等级/实名刷新旧对象，否则升级等级后仍沿用旧 rating（曾导致 level=8 登录却仍被判定 rating=1）
+                if new_rating:
+                    old_client.rating = new_rating
+                if new_realname:
+                    old_client.realname = new_realname
+                # 复位席位/位置，等客户端重新上报（避免沿用旧会话的席位状态）
+                old_client.facility_type = 0
+                old_client.visual_range = 40
+                old_client.pos_valid = False
                 client.client.callsign = client.callsign
                 client.client_type = old_client.type
                 client.cid = str(getattr(old_handler, "cid", client.cid))
@@ -399,7 +410,7 @@ class FSDServer:
                 self.clients[client.callsign] = client
                 logger.info(
                     f"Session resumed: {client.callsign} cid={client.cid} "
-                    f"(reason was {pending.get('reason')}, plan kept="
+                    f"(reason was {pending.get('reason')}, rating={getattr(old_client, 'rating', None)}, plan kept="
                     f"{bool(getattr(old_client, 'plan', None))})")
                 self._send_client_list(client)
                 return
