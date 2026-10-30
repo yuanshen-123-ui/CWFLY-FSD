@@ -1088,6 +1088,19 @@ class ClientHandler:
                     if text:
                         self.client.atis = text
                         logger.info(f"ATIS received: {self.callsign} ({len(text)} chars)")
+                        # 广播给其他客户端（机器人上线播报的 ATC INFO 依赖这条 $AX；
+                        # 此前只存不广播，导致 $AR 请求早于 ATIS 到达时机器人永远拿不到 ATIS）
+                        try:
+                            payload = text.replace("\n", "^").replace("\r", "")
+                            for h in list(self.server.clients.values()):
+                                if h is self:
+                                    continue
+                                if not getattr(h, "client", None):
+                                    continue
+                                asyncio.ensure_future(
+                                    h.send(f"$AX{self.callsign}:{h.client.callsign}:{payload}\r\n"))
+                        except Exception:
+                            pass
                 return
         except Exception:
             pass
