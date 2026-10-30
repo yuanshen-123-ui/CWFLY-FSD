@@ -29,6 +29,10 @@ HEARTBEAT_INTERVAL = 60
 # ★ 会话重连窗口（移植自 SimpleFSD session_clean_time，默认 40s）：
 # 客户端异常断开后保留会话，期间同呼号同 CID 重连可恢复原会话
 RECONNECT_GRACE = 40
+
+# 会话恢复补播阈值（秒）：断开超过该时长后重连，才向其他客户端补发一次上下线广播，
+# 让机器人/第三方客户端重新识别为「上线」；小于该值的网络抖动不播报，避免刷屏。
+RESUME_ANNOUNCE_MIN = 10.0
 # 可恢复的断开原因（对端 FIN/RST、读超时、客户端主动 #DA/#DP 等）；
 # 管理口 kill、服务端停机、缓冲区攻击等不进入重连窗口，必须立即下线。
 RECONNECTABLE_REASONS = {
@@ -413,6 +417,11 @@ class FSDServer:
                     f"(reason was {pending.get('reason')}, rating={getattr(old_client, 'rating', None)}, plan kept="
                     f"{bool(getattr(old_client, 'plan', None))})")
                 self._send_client_list(client)
+                # 断开超过阈值才补发（避免 1~3 秒网络抖动刷屏）
+                _kept_at = pending.get("expires_at", time.time()) - RECONNECT_GRACE
+                _gap = max(0.0, time.time() - _kept_at)
+                if _gap >= RESUME_ANNOUNCE_MIN:
+                    self._announce_resume(client, _gap)
                 return
             # CID 不一致（换人使用同呼号）：旧会话立即终结，按正常流程重新注册
             if task:
@@ -581,6 +590,33 @@ class FSDServer:
             self.unregister_client(handler)
         except Exception as e:
             logger.warning(f"Finalize pending session unregister error: {e}")
+
+    def _announce_resume(self, client: ClientHandler, gap: float):
+        """会话恢复（断开 >= RESUME_ANNOUNCE_MIN 秒）时向其他客户端补发一次上下线广播。
+
+        先 #DA/#DP 移除、再 #AA/#AP 新增，第三方客户端与机器人据此重新识别为上线。
+        """
+        c = getattr(client, "client", None)
+        if c is None:
+            return
+        if c.type == CLIENT_ATC:
+            remove_line = f"#DA{c.callsign}\r\n"
+            add_line = f"#AA{c.callsign}::{c.realname}:{c.cid}:{c.rating}:{c.protocol}\r\n"
+        else:
+            remove_line = f"#DP{c.callsign}\r\n"
+            add_line = (f"#AP{c.callsign}:{c.type}:{c.cid}:{c.rating}:"
+                        f"{c.protocol}:{c.simtype}:{c.realname}\r\n")
+        for cs, h in list(self.clients.items()):
+            if h is client or getattr(h, "client", None) is None:
+                continue
+            try:
+                asyncio.ensure_future(h.send(remove_line))
+                asyncio.ensure_future(h.send(add_line))
+            except Exception:
+                pass
+        logger.info(
+            f"Session resume announced: {c.callsign} disconnected {gap:.0f}s "
+            f"(re-add broadcast to peers)")
 
     def _send_client_list(self, client: ClientHandler):
         """把当前在线客户端列表下发给某个客户端（登录/会话恢复后调用）。"""
