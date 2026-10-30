@@ -1,0 +1,5 @@
+# FSD Python Server dependencies
+# Standard library only - no external dependencies required!
+#
+# Optional: For TLS support via stunnel or nginx proxy
+# (not required for basic operation)

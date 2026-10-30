@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.log
+cert.txt
+fsd.conf
+fsd-db.conf
+data/*.json
+whazzup.txt
+.env
+.DS_Store

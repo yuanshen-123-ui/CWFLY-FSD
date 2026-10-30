@@ -1,0 +1,27 @@
+; FSD Python Server Configuration - MySQL mode
+; Loads certificates from shared database instead of cert.txt
+
+[system]
+clientport = 6809
+serverport = 3011
+systemport = 3012
+certificates = cert.txt
+whazzup = whazzup.txt
+serverident = FSD-PY
+servername = CWFLY FSD Server
+serveremail = admin@cwflysim.cn
+serverhost = localhost
+serverlocation = China
+maxclients = 500
+
+[database]
+host = 127.0.0.1
+port = 3306
+name = cwfly
+user = 
+password = 
+
+[connections]
+
+[weather]
+source = download

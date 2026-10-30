@@ -1,0 +1,50 @@
+; FSD Python Server Configuration
+; Protocol upgrade v2 - SHA-256 hashed passwords + challenge-response auth
+
+[system]
+; Server ports
+clientport = 6809
+serverport = 3011
+systemport = 3012
+
+; System management password (required - set a strong password!)
+; password = change_this_password
+
+; Certificate file (stores SHA-256 hashed passwords)
+certificates = cert.txt
+
+; Whazzup status file
+whazzup = whazzup.txt
+
+; Server identity
+serverident = FSD-PY
+servername = FSD Python Server
+serveremail = admin@example.com
+serverhost = localhost
+serverlocation = XX
+
+; Maximum concurrent clients
+maxclients = 500
+
+[connections]
+; Servers to connect to (colon-separated list of host:port)
+; connectto = server1.example.com:3011:server2.example.com:3011
+
+; IP addresses allowed to connect to the server port
+; If empty, server port denies all connections (default deny)
+; allowfrom = 192.168.1.0:10.0.0.0
+
+[weather]
+; METAR data source: download, network, or file
+source = download
+
+; METAR FTP server (NOAA)
+; server = weather.noaa.gov
+; dir = data/observations/metar/cycles/
+
+[database]
+host = 127.0.0.1
+port = 3306
+name = cwfly
+user = 
+password = 
