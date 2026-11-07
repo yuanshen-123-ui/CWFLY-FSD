@@ -46,9 +46,10 @@ OURAIRPORTS_TYPES = {"large_airport", "medium_airport"}
 BATCH_SIZE = 40
 SRC_TIMEOUT = 25
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_METAR_PATH = os.path.join(_HERE, "metar.dat")
-_STATIONS_CACHE = os.path.join(_HERE, "data", "airports_cn.json")
+# 运行期文件锚定启动目录(CWD)，与 fsd.conf / cert.txt / fsd.log 一致
+_RUN_DIR = os.getcwd()
+_METAR_PATH = os.path.join(_RUN_DIR, "metar.dat")
+_STATIONS_CACHE = os.path.join(_RUN_DIR, "data", "airports_cn.json")
 
 # 内置兜底清单（网络不可用且无缓存时使用；与历史硬编码清单保持一致）
 FALLBACK_STATIONS = [

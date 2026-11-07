@@ -1,12 +1,13 @@
 """离线单测：会话重连状态机 / 4 点视程最近距离 / #DL 心跳（不依赖真实端口）。"""
 import asyncio
+import os
 import sys
 
-sys.path.insert(0, '.')
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from server import FSDServer, RECONNECT_GRACE, RECONNECTABLE_REASONS  # noqa: E402
-import client_handler  # noqa: E402
-from client_handler import Client, ClientHandler  # noqa: E402
+from fsd.server import FSDServer, RECONNECT_GRACE, RECONNECTABLE_REASONS  # noqa: E402
+from fsd import client_handler  # noqa: E402
+from fsd.client_handler import Client, ClientHandler  # noqa: E402
 
 PASS, FAIL = [], []
 
@@ -100,7 +101,7 @@ async def main():
         pass
 
     print("== 2) 4 点视程最近距离 ==")
-    from client_handler import ClientHandler as CH
+    from fsd.client_handler import ClientHandler as CH
     a = Client("1", "ATC1", client_handler.CLIENT_ATC, 5, "A", 9, 0)
     a.pos_valid = True
     a.lat, a.lon = 30.0, 120.0          # 主位置
@@ -138,7 +139,7 @@ async def main():
     check("心跳计数增加", srv2.stats.get("heartbeats_sent") == 1)
 
     print("== 4) ATIS / 视程点处理 ==")
-    from client_handler import ClientHandler as CH2
+    from fsd.client_handler import ClientHandler as CH2
     atc_client = Client("9", "ZSHA_CTR", client_handler.CLIENT_ATC, 5, "C", 9, 0)
     hg = make_handler("ZSHA_CTR", "9", atc_client)
     hg.client_type = client_handler.CLIENT_ATC

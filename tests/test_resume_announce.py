@@ -7,9 +7,9 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import client_handler  # noqa: E402
-import server as server_mod  # noqa: E402
-from client_handler import Client  # noqa: E402
+from fsd import client_handler  # noqa: E402
+from fsd import server as server_mod  # noqa: E402
+from fsd.client_handler import Client  # noqa: E402
 
 PASS, FAIL = [], []
 

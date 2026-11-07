@@ -9,10 +9,10 @@ import re
 import time
 from typing import Optional
 
-from protocol import *
-from certificate import generate_challenge
-from auth import check_login, check_login_challenge
-import db
+from .protocol import *
+from .certificate import generate_challenge
+from .auth import check_login, check_login_challenge
+from . import db
 
 logger = logging.getLogger("fsd.client")
 
@@ -286,7 +286,6 @@ class ClientHandler:
         # 全是静默的，导致线上「闪断」无法归因（只能靠排除法）。这里统一记录原因。
         close_reason = "unknown"
         try:
-            # Send challenge for secure auth
             await self.send(f"$CH{self.challenge}\r\n")
 
             while not self._closed:
@@ -336,13 +335,13 @@ class ClientHandler:
         await self.send(f"$ERserver:{callsign}:{code:03d}:{env}:{err_str}\r\n")
 
     async def _kick(self, code: int, env: str = ""):
-        self._kicked = True
         """认证失败: 发送错误码后断开连接(踢掉该管制员/机组)。
 
         发 $ER 后短暂停留 0.15s 确保客户端收到错误提示, 再优雅关闭且不等待:
         close() 不等对端响应, 不会挂起; 0.15s 是让 $ER 送达的最小代价,
         与客户端(EuroScope)界面显示"已断开"的延迟无关。
         """
+        self._kicked = True
         try:
             await self.send_error(code, env)
         except Exception:
@@ -379,7 +378,7 @@ class ClientHandler:
             logger.info(f"[RAW] {line!r} from {self.callsign or '?'}")
 
         self.server.stats["packets_received"] += 1
-        self.last_data_at = time.time()   # 保活监测：记录最后收包时刻
+        self.last_data_at = time.time()
 
         # 命令最小字段数守卫（移植自 SimpleFSD CommandRequirements，非致命）：
         # 字段数明显不足的半截报文直接回 $ER，不再进入各 handler，避免边界异常。
@@ -423,17 +422,13 @@ class ClientHandler:
                 logger.warning(f"AM handler error from {self.callsign or '?'}: {e}")
             return
 
-        # Parse command prefix
         cmd = self._get_command(line)
         if cmd is None:
             return
 
-        # Extract data after command prefix
         data = line[len(CL_CMD_NAMES[cmd]):]
         parts = data.split(":")
-        self.server.stats["packets_received"] += 1
 
-        # Route to command handler
         handlers = {
             CL_ADDATC: self._handle_add_atc,
             CL_ADDPILOT: self._handle_add_pilot,
@@ -464,7 +459,6 @@ class ClientHandler:
                 # 单个报文解析失败不应断开客户端连接
                 logger.warning(f"Handler error ({CL_CMD_NAMES[cmd]}) from {self.callsign or '?'}: {e}")
         elif self.client:
-            # Unknown command - ignore
             pass
 
     def _get_command(self, line: str) -> Optional[int]:
@@ -502,7 +496,6 @@ class ClientHandler:
         realname = parts[6] if len(parts) > 6 else ""
         simtype = parts[7] if len(parts) > 7 else "0"
 
-        # Validate
         err = self._callsign_ok(callsign)
         if err:
             await self._kick(err)
@@ -518,7 +511,6 @@ class ClientHandler:
             await self._kick(ERR_SYNTAX)
             return
 
-        # Authenticate
         if self.challenge:
             ok, max_lvl = check_login_challenge(
                 self.server.certs, cid, hmac_response, self.challenge)
@@ -527,7 +519,6 @@ class ClientHandler:
                 self.server.certs, cid, hmac_response)
 
         if not ok:
-            # 账号密码不匹配: 发送错误后断开连接(踢掉)
             if max_lvl == 0:
                 logger.warning(f"用户{cid}登录失败,原因: 账号不存在或已停用")
                 await self._kick(ERR_CSSUSPEND)
@@ -571,7 +562,7 @@ class ClientHandler:
         if realname:
             return realname
         try:
-            from db import get_username_by_cid
+            from .db import get_username_by_cid
             name = get_username_by_cid(cid)
             return name or realname
         except Exception:
@@ -613,7 +604,6 @@ class ClientHandler:
         ok, max_lvl = check_login(self.server.certs, cid, password)
 
         if not ok:
-            # 账号密码不匹配: 发送错误后断开连接(踢掉)
             if max_lvl == 0:
                 logger.warning(f"用户{cid}登录失败,原因: 账号不存在或已停用")
                 await self._kick(ERR_CSSUSPEND)
@@ -672,7 +662,6 @@ class ClientHandler:
         ok, max_lvl = check_login(self.server.certs, cid, password)
 
         if not ok:
-            # 账号密码不匹配: 发送错误后断开连接(踢掉)
             if max_lvl == 0:
                 logger.warning(f"用户{cid}登录失败,原因: 账号不存在或已停用")
                 await self._kick(ERR_CSSUSPEND)
@@ -739,7 +728,6 @@ class ClientHandler:
         except (ValueError, IndexError):
             return
 
-        # Broadcast pilot position to clients within visual range (SimpleFSD port)
         data = (f"{self.client.ident_flag}:{self.callsign}:{self.client.transponder}:"
                 f"{self.client.rating}:{self.client.lat}:{self.client.lon}:"
                 f"{self.client.altitude}:{self.client.groundspeed}:{self.client.pbh}:"
@@ -817,8 +805,6 @@ class ClientHandler:
         except (ValueError, IndexError):
             return
 
-        # Broadcast ATC position to clients within visual range (SimpleFSD port)
-        # Format: callsign:frequency:facilityType:visualRange:rating:lat:lon:altitude
         # 广播保留原始编码(raw_freq=24550), 避免其他 FSD 客户端解析错误
         data = (f"{self.callsign}:{raw_freq}:{self.client.facility_type}:"
                 f"{self.client.visual_range}:{self.client.rating}:{self.client.lat}:"
@@ -893,7 +879,6 @@ class ClientHandler:
             self.client.plan = fp
             logger.info(f"FP: {fp_callsign} {fp.depairport}->{fp.destairport}")
 
-            # 落库 + 机组主动提交触发规则广播给在线 ATC; 另 $CQ FP 请求时也可拉取
             fp.callsign = fp_callsign
             asyncio.ensure_future(self._persist_plan(fp_callsign, fp))
             asyncio.ensure_future(self._broadcast_plan_event(fp_callsign))
@@ -1012,7 +997,6 @@ class ClientHandler:
         if to_cs == "server" or to_cs == "*":
             return
 
-        # Find target client and forward
         target = self.server.get_client(to_cs)
         if target:
             await target.send_message(from_cs, to_cs, message)
@@ -1505,8 +1489,6 @@ class ClientHandler:
             pass
 
     async def _disconnect(self, reason: str = "unknown"):
-        if getattr(self, "_kicked", False):
-            reason = "kicked"
         """Clean up on disconnect.
 
         ★ 会话重连（移植自 SimpleFSD session_clean_time）：可恢复的断开先进入
@@ -1514,6 +1496,8 @@ class ClientHandler:
         在线快照），同呼号同 CID 重连即恢复 —— 闪断不再被记成掉线+上线两次，
         也不再丢失已装载的计划。
         """
+        if getattr(self, "_kicked", False):
+            reason = "kicked"
         if self.client:
             # 记录断开原因与在线时长：此前全静默，导致「闪断」无法归因
             try:

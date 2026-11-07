@@ -1,8 +1,19 @@
-"""List users with fsdLevel >= 1 (OBS and above)."""
+"""List users with fsdLevel >= 1 (OBS and above).
+
+数据库连接从环境变量读取（与 update_admin_fsd_hash.py 一致）。
+"""
+import os
+
 import pymysql
 
-conn = pymysql.connect(host="127.0.0.1", port=3306, user="root",
-                       password="password", database="cwfly", charset="utf8mb4")
+conn = pymysql.connect(
+    host=os.environ.get("DB_HOST", "127.0.0.1"),
+    port=int(os.environ.get("DB_PORT", "3306")),
+    user=os.environ.get("DB_USER", "root"),
+    password=os.environ.get("DB_PASSWORD", "password"),
+    database=os.environ.get("DB_NAME", "cwfly"),
+    charset="utf8mb4",
+)
 with conn.cursor() as cur:
     cur.execute("""
         SELECT cid, username, fsdLevel, fsdType, rating,

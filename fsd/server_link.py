@@ -8,8 +8,8 @@ import logging
 import time
 from typing import Optional
 
-from protocol import *
-from client_handler import Client
+from .protocol import *
+from .client_handler import Client
 
 logger = logging.getLogger("fsd.serverlink")
 

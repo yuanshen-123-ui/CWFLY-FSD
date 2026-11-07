@@ -2,18 +2,19 @@
 
 import asyncio
 import logging
+import os
 import time
 from typing import Optional
 
-from config import Config
-from protocol import *
-from certificate import CertificateStore, Certificate, generate_challenge
-from client_handler import ClientHandler, Client, FlightPlan
-from server_link import ServerLinkManager
-from management import ManagementConsole
-from weather import WeatherManager
-from whazzup import WhazzupGenerator
-import db
+from .config import Config
+from .protocol import *
+from .certificate import CertificateStore, Certificate, generate_challenge
+from .client_handler import ClientHandler, Client, FlightPlan
+from .server_link import ServerLinkManager
+from .management import ManagementConsole
+from .weather import WeatherManager
+from .whazzup import WhazzupGenerator
+from . import db
 
 logger = logging.getLogger("fsd")
 
@@ -52,14 +53,12 @@ class FSDServer:
         self.config = config
         self.running = False
 
-        # Server identity
         self.ident = config.server_ident or f"FSD{os.getpid()}"
         self.name = config.server_name
         self.email = config.server_email
         self.hostname = config.server_host
         self.location = config.server_location
 
-        # Core components
         self.certs = CertificateStore()
         self.server_links = ServerLinkManager(self)
         self.weather = WeatherManager(self)
@@ -78,7 +77,6 @@ class FSDServer:
         self.pending_sessions: dict[str, dict] = {}
         self.start_time = int(time.time())
 
-        # Statistics
         self.stats = {
             "connections": 0,
             "packets_received": 0,
@@ -114,7 +112,6 @@ class FSDServer:
 
         # 保存 DB 配置供证书热重载使用
         self._db_cert_config = db_config if (db_host and db_name) else None
-
         # Ensure default admin exists
         if not self.certs.has("000000"):
             import secrets
@@ -135,13 +132,11 @@ class FSDServer:
         """Start all server interfaces."""
         self.running = True
 
-        # Create asyncio servers
         self._client_server = await asyncio.start_server(
             self._handle_client, "0.0.0.0", self.config.client_port)
         server_bind = self.config.get("system", "server_bind", "127.0.0.1")
         self._server_server = await asyncio.start_server(
             self._handle_server, server_bind, self.config.server_port)
-        # System management on localhost only
         self._system_server = await asyncio.start_server(
             self._handle_system, "127.0.0.1", self.config.system_port)
 
@@ -149,16 +144,9 @@ class FSDServer:
         logger.info(f"Server port={self.config.server_port}")
         logger.info(f"System port={self.config.system_port} (127.0.0.1 only)")
 
-        # Start server links
         await self.server_links.start()
-
-        # Start weather manager
         self.weather.start()
-
-        # Start whazzup generator
         self.whazzup.start()
-
-        # Start certificate hot-reload loop
         self._start_cert_reload()
 
         # 飞行计划补发任务（修复 2026-10-16：此前管理端口通知未实现 + 周期扫描被删除，
@@ -369,7 +357,7 @@ class FSDServer:
     async def _handle_server(self, reader: asyncio.StreamReader,
                              writer: asyncio.StreamWriter):
         """Handle a new server connection (port 3011)."""
-        from server_link import ServerLink
+        from .server_link import ServerLink
         link = ServerLink(self, reader, writer)
         await self.server_links.add(link)
 
@@ -450,7 +438,6 @@ class FSDServer:
                 pass
         self.clients[client.callsign] = client
         self.client_list.append(client.client)
-        # Broadcast ADDCLIENT to linked servers
         self._broadcast_addclient(client)
         logger.info(f"Client registered: {client.callsign} ({client.cid})")
 
@@ -471,7 +458,6 @@ class FSDServer:
         # Send welcome / server info to the newly connected client
         try:
             name = self.config.get("system", "servername", "CWFLY FSD")
-            # MOTD / welcome message
             msg = (
                 f"Welcome to {name}!"
                 f"\n"
@@ -481,7 +467,6 @@ class FSDServer:
             )
             asyncio.ensure_future(client.send_message("SERVER", client.callsign, msg))
 
-            # Send existing clients to the new one (so EuroScope can show them)
             for cs, h in self.clients.items():
                 if cs == client.callsign:
                     continue
@@ -738,6 +723,3 @@ class FSDServer:
             return
         data = f"RMCLIENT:*:{self.ident}:U0:0:0:{client.callsign}"
         self.server_links.broadcast(data + "\r\n")
-
-
-import os  # noqa: E402 - needed for getpid in __init__

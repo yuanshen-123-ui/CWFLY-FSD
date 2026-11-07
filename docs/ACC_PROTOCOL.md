@@ -28,7 +28,7 @@ $CQ<from>:<to>:ACC:<json>
 
 swift 收到非请求的 ACC 后，会先 `isAircraftInRange()` 过滤（L1667），因此服务端广播给所有机组是安全的。
 
-## 服务端行为（`client_handler.py`）
+## 服务端行为（`fsd/client_handler.py`）
 
 - `_handle_cq` 增加 `ACC` 分支 → `_relay_aircraft_config`：
   - `to == "@94836"`：转发给所有在线 **PILOT**（排除发送者与 ATC）

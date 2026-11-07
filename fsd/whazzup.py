@@ -10,7 +10,7 @@ import os
 import time
 from typing import Optional
 
-from protocol import CLIENT_ATC, CLIENT_PILOT
+from .protocol import CLIENT_ATC, CLIENT_PILOT
 
 logger = logging.getLogger("fsd.whazzup")
 
@@ -59,7 +59,6 @@ class WhazzupGenerator:
         if not filename:
             return
 
-        # Use temp file for atomic replace
         tmpfile = filename + ".tmp"
 
         try:
@@ -139,10 +138,8 @@ class WhazzupGenerator:
                 f.write(f"{self.server.ident}:{self.server.hostname}:"
                        f"{self.server.location}:{self.server.name}:1\r\n")
 
-            # Atomic rename
-            if os.path.exists(filename):
-                os.remove(filename)
-            os.rename(tmpfile, filename)
+            # 原子替换（os.replace 跨平台原子，且目标存在时直接覆盖）
+            os.replace(tmpfile, filename)
 
         except Exception as e:
             logger.error(f"Failed to write whazzup: {e}")

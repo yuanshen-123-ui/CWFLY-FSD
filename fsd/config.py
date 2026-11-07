@@ -69,14 +69,10 @@ class Config:
 
     def _set_defaults(self):
         for section, options in DEFAULT_CONFIG.items():
-            self.parser[section] = {}
+            self.parser[section] = dict(options)
 
     def get(self, section: str, key: str, default=None):
-        """Get a config value as string."""
-        try:
-            return self.parser.get(section, key, fallback=default)
-        except (configparser.NoSectionError, configparser.NoOptionError):
-            return default
+        return self.parser.get(section, key, fallback=default)
 
     def getint(self, section: str, key: str, default: int = 0) -> int:
         val = self.get(section, key)

@@ -1,8 +1,8 @@
 """Authentication module - wraps CertificateStore for login operations."""
 
 from typing import Optional
-from certificate import CertificateStore
-from protocol import LEV_OBSPILOT
+from .certificate import CertificateStore
+from .protocol import LEV_OBSPILOT
 
 
 def check_login(certs: CertificateStore, cid: str, password: str

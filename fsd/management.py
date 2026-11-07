@@ -9,7 +9,7 @@ import logging
 import time
 from typing import Optional
 
-from protocol import PRODUCT, VERSION, MAXLOG, CERT_LEVEL_NAMES
+from .protocol import PRODUCT, VERSION, MAXLOG, CERT_LEVEL_NAMES
 
 logger = logging.getLogger("fsd.mgmt")
 
@@ -273,8 +273,8 @@ class ManagementConsole:
                 await self._write(f"  {cert.cid:<6} {level_name:<15} from {cert.origin}\r\n")
 
         elif sub == "add" and len(args) >= 4:
-            from certificate import Certificate
-            from protocol import LEV_ADMINISTRATOR
+            from .certificate import Certificate
+            from .protocol import LEV_ADMINISTRATOR
             cid, pwd, level = args[1], args[2], int(args[3])
             # 安全(2026-10-25 审计 P2-4): level 合法范围
             if not (0 <= level <= LEV_ADMINISTRATOR):

@@ -6,7 +6,9 @@ venv/
 cert.txt
 fsd.conf
 fsd-db.conf
-data/*.json
+data/
+metar.dat
+.fsd-admin-000000
 whazzup.txt
 .env
 .DS_Store

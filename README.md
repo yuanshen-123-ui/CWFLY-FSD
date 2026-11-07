@@ -16,21 +16,47 @@ CWFLY 的 **FSD 协议服务器**，用 Python 3 + asyncio 实现，供 EuroScop
 
 ## 二、架构与模块
 
-| 文件 | 职责 |
+| 模块（均在 `fsd/` 包内） | 职责 |
 |---|---|
-| `main.py` | 启动入口：加载配置 → 初始化证书/数据库/天气 → 启动各服务 |
-| `server.py` | asyncio 服务器：监听三端口、连接准入、`clients` 注册表、保活、事件循环延迟监控、优雅关闭 |
-| `client_handler.py` | 单客户端的协议状态机：命令分发、位置/计划/消息、在线快照、航迹记录、断线处理 |
-| `protocol.py` | FSD 命令常量、错误码、等级常量 |
-| `certificate.py` | 证书库：SHA-256 口令、`$CH/$SA` 挑战应答校验、MySQL 证书模式与 60s 热加载 |
-| `auth.py` | 认证辅助（白名单/等级等） |
-| `config.py` | 配置解析（`fsd.conf` / `fsd-db.conf`） |
-| `db.py` | MySQL 访问：在线快照、计划落库、在线时长、航迹、审计 |
-| `weather.py` | METAR 多源（aviationweather + VATSIM + 可选 metar-taf）、OurAirports 站点库、`metar.dat` 原子写入 |
-| `whazzup.py` | 周期生成 `whazzup.txt`（供 Little Navmap 等第三方） |
-| `management.py` | 3012 管理控制台：在线列表/踢人/广播/统计 |
-| `server_link.py` | 服务器互联协议 |
-| `tests/test_session_reconnect.py` | 会话重连/心跳/视程/ATIS 共 21 项离线断言 |
+| `main.py` | 启动逻辑：加载配置 → 初始化证书/数据库/天气 → 启动各服务；根目录 `main.py` 为薄壳，支持 `python main.py` / `python -m fsd` |
+| `fsd/server.py` | asyncio 服务器：监听三端口、连接准入、`clients` 注册表、保活、事件循环延迟监控、优雅关闭 |
+| `fsd/client_handler.py` | 单客户端的协议状态机：命令分发、位置/计划/消息、在线快照、航迹记录、断线处理 |
+| `fsd/protocol.py` | FSD 命令常量、错误码、等级常量 |
+| `fsd/certificate.py` | 证书库：SHA-256 口令、`$CH/$SA` 挑战应答校验、MySQL 证书模式与 60s 热加载 |
+| `fsd/auth.py` | 认证辅助（白名单/等级等） |
+| `fsd/config.py` | 配置解析（`fsd.conf` / `fsd-db.conf`） |
+| `fsd/db.py` | MySQL 访问：在线快照、计划落库、在线时长、航迹、审计 |
+| `fsd/weather.py` | METAR 多源（aviationweather + VATSIM + 可选 metar-taf）、OurAirports 站点库、`metar.dat` 原子写入 |
+| `fsd/whazzup.py` | 周期生成 `whazzup.txt`（供 Little Navmap 等第三方） |
+| `fsd/management.py` | 3012 管理控制台：在线列表/踢人/广播/统计 |
+| `fsd/server_link.py` | 服务器互联协议 |
+
+运维脚本（数据库连接一律走环境变量 `DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME`）：
+
+| 脚本 | 用途 |
+|---|---|
+| `scripts/update_admin_fsd_hash.py` | 设置管理员（CID 0000）与机器人（CID 000001）的 FSD 口令哈希，口令从 `ADMIN_PASSWORD` / `FSD_BOT_PASSWORD` 读取 |
+| `scripts/list_users.py` | 列出 fsdLevel ≥ 1 的用户及等级 |
+
+### 目录结构
+
+```
+CWFLY-FSD/
+├── main.py                # 薄入口（python main.py ≙ python -m fsd）
+├── requirements.txt
+├── fsd/                   # 核心包（12 个模块，职责见上表）
+├── config/                # 配置样例（复制为 fsd.conf / fsd-db.conf 后使用）
+│   ├── fsd.conf.example           # 单机证书文件模式
+│   └── fsd-db.conf.example        # MySQL 证书模式（与主站共库）
+├── docs/                  # 项目文档
+│   ├── ACC_PROTOCOL.md            # swift Aircraft Configuration（$CQ ACC）协议说明
+│   ├── CONTRIBUTING.md            # 贡献指南
+│   └── CLA.md                     # 贡献者许可协议
+├── scripts/               # 运维脚本（数据库连接走环境变量）
+└── tests/                 # 离线单测（8 组，不依赖真实端口）
+```
+
+> `README.md` 与 `LICENSE` 按 GitHub 惯例保留在根目录。
 
 ---
 
@@ -146,7 +172,7 @@ password =
 source = download
 ```
 
-> 真实配置不入库：仓库只提交 `fsd.conf.example` / `fsd-db.conf.example`（口令已清空）。
+> 真实配置不入库：仓库只提交 `config/fsd.conf.example` / `config/fsd-db.conf.example`（口令已清空）。
 
 ---
 
@@ -155,16 +181,15 @@ source = download
 ```bash
 python -m venv .venv && . .venv/Scripts/activate    # Windows
 pip install -r requirements.txt
-cp fsd-db.conf.example fsd-db.conf                   # 或 fsd.conf.example
-python main.py
+cp config/fsd-db.conf.example fsd-db.conf            # 或 config/fsd.conf.example
+python main.py            # 或 python -m fsd
 ```
 
 ### 测试
 
 ```bash
-python tests/test_session_reconnect.py    # 21 项：重连窗口/心跳/视程最近距离/ATIS/视程点
-python test_bcrypt_login.py               # 口令哈希与登录校验
-python test_port.py                       # 端口连通
+for f in tests/test_*.py; do python "$f"; done    # 8 组离线单测，无网络依赖
+python tests/test_session_reconnect.py            # 单跑一组：21 项断言（重连/心跳/视程/ATIS）
 ```
 
 ---
@@ -203,8 +228,8 @@ python test_port.py                       # 端口连通
 
 ## 贡献
 
-欢迎参与！请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)；
-提交 PR 即视为同意 [CLA.md](CLA.md)（你保留自己贡献的版权，同时授予项目发起人再许可能力）。
+欢迎参与！请先阅读 [CONTRIBUTING.md](docs/CONTRIBUTING.md)；
+提交 PR 即视为同意 [CLA.md](docs/CLA.md)（你保留自己贡献的版权，同时授予项目发起人再许可能力）。
 
 ---
 

@@ -185,7 +185,6 @@ def write_flight_plan(user_id, callsign, fp):
         )
         conn = _conn()
         with conn.cursor() as cur:
-            # 30 分钟内重复提交: 覆盖该用户最近一条计划
             cur.execute(
                 "SELECT id, filedAt FROM `FlightPlan` WHERE userId=%s "
                 "ORDER BY id DESC LIMIT 1", (str(user_id or "")[:4],))

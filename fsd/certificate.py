@@ -13,7 +13,7 @@ import os
 import time
 from typing import Optional
 
-from protocol import LEV_OBSPILOT, LEV_MAX, CERT_LEVEL_NAMES
+from .protocol import LEV_OBSPILOT, LEV_MAX, CERT_LEVEL_NAMES
 
 logger = logging.getLogger("fsd.certificate")
 
@@ -87,14 +87,11 @@ class Certificate:
 
         Tries: SHA256 direct → SHA256 hashed → bcrypt fallback
         """
-        # Direct hash comparison
         if self.password_hash and hmac.compare_digest(self.password_hash, password.lower()):
             return True
-        # SHA256 hash plaintext and compare
         if self.password_hash and len(password) != 64:
             if hmac.compare_digest(self.password_hash, hash_password(password)):
                 return True
-        # bcrypt fallback (for users synced from main site DB without fsdPasswordHash)
         if self.bcrypt_hash and self.bcrypt_hash.startswith("$"):
             try:
                 import bcrypt
@@ -150,6 +147,28 @@ class CertificateStore:
             print(f"[Certificate] Error loading: {e}")
             return 0
 
+    @staticmethod
+    def _cert_from_db_row(row) -> Optional[Certificate]:
+        """User 表一行 → Certificate；不合格的账号返回 None。
+
+        - 空 fsdPasswordHash 一律拒绝(安全审计 2026-10-25: 空密码即可登录)
+        - 系统账号 0000 强制 OBSPILOT(安全审计 2026-10-25 P0-4:
+          防 level-12 管理权经公网 6809 登录)
+        load_from_db / reload_from_db 共用，保证两条加载路径防护一致。
+        """
+        cid = str(row[0])
+        sha256_hash = row[1] or ""
+        bcrypt_hash = row[2] or ""
+        created = int(row[4].timestamp()) if row[4] else int(time.time())
+        if sha256_hash == hash_password(""):
+            logger.warning(f"[Certificate] skip CID {cid}: empty fsdPasswordHash")
+            return None
+        level = _FSD_LEVEL_MAP.get(row[3], 1)
+        if cid == "0000":
+            level = 1
+        pwd = sha256_hash if sha256_hash else ""
+        return Certificate(cid, pwd, level, created, "mysql", bcrypt_hash=bcrypt_hash)
+
     def load_from_db(self, db_config: dict) -> int:
         """Load certificates from MySQL database (shared with main site).
 
@@ -169,40 +188,20 @@ class CertificateStore:
                 password=db_config.get("password", ""),
                 database=db_config.get("name", "cwfly"),
                 charset="utf8mb4",
-                # 修复(2026-10-16)：此处原先没有任何超时，而 reload_from_db 的调用点
-                # 曾在事件循环上同步执行 → MySQL 卡住会冻住整个 FSD 服务。
-                # 现在调用点已改为线程池执行，并在此补上连接/读写超时。
+                # MySQL 卡住曾冻住整个事件循环（调用点已改线程池），必须带超时
                 connect_timeout=3,
                 read_timeout=5,
                 write_timeout=5,
             )
             with conn.cursor() as cur:
-                # Fetch all users: prefer fsdPasswordHash, fall back to bcrypt password
                 cur.execute(
                     "SELECT cid, fsdPasswordHash, `password`, fsdLevel, createdAt "
                     "FROM `User`"
                 )
-                empty_sha = hash_password("")  # e3b0c4... = sha256("")
                 for row in cur.fetchall():
-                    cid = str(row[0])
-                    sha256_hash = row[1] or ""
-                    bcrypt_hash = row[2] or ""
-                    fsd_level = row[3]
-                    created = int(row[4].timestamp()) if row[4] else int(time.time())
-                    level = _FSD_LEVEL_MAP.get(fsd_level, 1)
-                    # 安全(2026-10-25 审计): 空哈希账号一律拒绝(空密码即可登录)
-                    if sha256_hash == empty_sha:
-                        print(f"[Certificate] skip CID {cid}: empty fsdPasswordHash")
-                        continue
-                    # 安全(2026-10-25 审计 P0-4): 系统账号 0000 是 bot 专用,
-                    # 从 DB 侧加载时强制降为 OBSPILOT, 防止 level-12 管理权经公网 6809 登录
-                    if cid == "0000":
-                        level = 1
-                    # Use SHA256 if available, otherwise mark as bcrypt-only
-                    pwd = sha256_hash if sha256_hash else ""
-                    cert = Certificate(cid, pwd, level, created, "mysql",
-                                       bcrypt_hash=bcrypt_hash)
-                    self._certs[cid] = cert
+                    cert = self._cert_from_db_row(row)
+                    if cert is not None:
+                        self._certs[cert.cid] = cert
             conn.close()
             return len(self._certs)
         except ImportError:
@@ -228,9 +227,7 @@ class CertificateStore:
                 password=db_config.get("password", ""),
                 database=db_config.get("name", "cwfly"),
                 charset="utf8mb4",
-                # 修复(2026-10-16)：此处原先没有任何超时，而 reload_from_db 的调用点
-                # 曾在事件循环上同步执行 → MySQL 卡住会冻住整个 FSD 服务。
-                # 现在调用点已改为线程池执行，并在此补上连接/读写超时。
+                # MySQL 卡住曾冻住整个事件循环（调用点已改线程池），必须带超时
                 connect_timeout=3,
                 read_timeout=5,
                 write_timeout=5,
@@ -245,17 +242,11 @@ class CertificateStore:
 
             db_cids = set()
             for row in rows:
-                cid = str(row[0])
-                sha256_hash = row[1] or ""
-                bcrypt_hash = row[2] or ""
-                fsd_level = row[3]
-                created = int(row[4].timestamp()) if row[4] else int(time.time())
-                level = _FSD_LEVEL_MAP.get(fsd_level, 1)
-                pwd = sha256_hash if sha256_hash else ""
-                cert = Certificate(cid, pwd, level, created, "mysql",
-                                   bcrypt_hash=bcrypt_hash)
-                self._certs[cid] = cert
-                db_cids.add(cid)
+                cert = self._cert_from_db_row(row)
+                if cert is None:
+                    continue
+                self._certs[cert.cid] = cert
+                db_cids.add(cert.cid)
 
             # 删除 DB 中已不存在的 mysql 来源证书(用户被删除)
             for cid in [c for c, cert in self._certs.items()

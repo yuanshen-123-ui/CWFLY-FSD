@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 """离线验证：会话重连恢复后，rating/realname 按本次登录刷新，席位状态复位。"""
 import asyncio
+import os
 import sys
 
-sys.path.insert(0, ".")
-from server import FSDServer  # noqa: E402
-import client_handler  # noqa: E402
-from client_handler import Client  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from fsd.server import FSDServer, RECONNECTABLE_REASONS  # noqa: E402
+from fsd import client_handler  # noqa: E402
+from fsd.client_handler import Client  # noqa: E402
 
 PASS, FAIL = [], []
 
@@ -89,7 +90,7 @@ async def main():
     if getattr(h, "_kicked", False):
         reason = "kicked"
     check("_kicked 时强制 reason=kicked", reason == "kicked")
-    check("kicked 不在可恢复原因中", reason not in __import__("server").RECONNECTABLE_REASONS)
+    check("kicked 不在可恢复原因中", reason not in RECONNECTABLE_REASONS)
 
     print()
     print("通过 %d 项，失败 %d 项" % (len(PASS), len(FAIL)))

@@ -14,7 +14,7 @@
 4. **自测**：
    - 前端：`npm run build`、`npm run lint`、`npm run test`（如有）
    - 后端：`npm test`（如有）或至少保证启动无异常
-   - FSD：`python -m py_compile *.py` + 相关 `tests/` 脚本
+   - FSD：`python -m py_compile main.py fsd/*.py` + 相关 `tests/` 脚本
 5. **提交 PR**：描述问题、改动点、验证方式（截图/日志更佳），并在 PR 描述中写明：
    `I have read the CLA and agree to it.`
 
