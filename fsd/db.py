@@ -13,6 +13,8 @@ import threading
 
 logger = logging.getLogger("fsd.db")
 
+_DISABLED = False
+
 _db_config = {
     "host": "127.0.0.1",
     "port": 3306,
@@ -30,12 +32,20 @@ def init_db(config):
     _db_config["password"] = config.get("database", "password", "")
     _db_config["name"] = config.get("database", "name", "cwfly")
 
+    global _DISABLED
+    _DISABLED = not bool(_db_config.get("host") and _db_config.get("name"))
+    if _DISABLED:
+        # 无数据库部署（临时/备份实例）：静默禁用 DB 功能，避免每次操作刷 warning
+        logger.setLevel(logging.ERROR)
+
 
 # 每线程复用一条连接（线程池里的 worker 会长期复用，避免每次 upsert 都新建连接）
 _local = threading.local()
 
 
 def _connect():
+    if _DISABLED:
+        raise RuntimeError("database disabled (empty [database] host/name)")
     import pymysql
     return pymysql.connect(
         host=_db_config["host"],
