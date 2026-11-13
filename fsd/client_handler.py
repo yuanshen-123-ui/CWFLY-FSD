@@ -1416,11 +1416,25 @@ class ClientHandler:
         return True
 
     async def _reply_fp_request(self, target_callsign):
-        """响应 $CQ FP 请求: 发送该机组近 30 分钟提交的飞行计划, 否则空 $FP。"""
+        """响应 $CQ FP 请求: 发送该机组近 30 分钟提交的飞行计划, 否则空 $FP。
+
+        2026-11-07 临时迁移：DB 不可用时回退到在线机组内存里的 FlightPlan。
+        """
         try:
-            plan = await asyncio.get_running_loop().run_in_executor(
-                None, db.get_recent_plan, target_callsign)
+            plan = None
+            try:
+                plan = await asyncio.get_running_loop().run_in_executor(
+                    None, db.get_recent_plan, target_callsign)
+            except Exception:
+                plan = None
             callsign = target_callsign
+            if not plan:
+                h = self.server.get_client(target_callsign)
+                if h and h.client and h.client.plan:
+                    line = self._fp_line_from_memory(target_callsign, h.client.plan)
+                    if line:
+                        await self.send(line)
+                        return
             if plan:
                 ft = 'I' if str(plan.get("flightType") or "").upper().startswith('I') else 'V'
                 dep_time = str(plan.get("depTime") or "")[:4]
@@ -1565,6 +1579,11 @@ class ClientHandler:
                 asyncio.ensure_future(self.send(f"$CQSERVER:{self.callsign}:ATIS\r\n"))
             except Exception:
                 pass
+            # 2026-11-07 临时迁移：ATC 上线主动推送在线机组计划（DB 不可用时走内存回退）
+            try:
+                asyncio.ensure_future(self._broadcast_plans_from_db())
+            except Exception:
+                pass
 
     async def _load_filed_plan_on_login(self):
         """登录时装载该呼号在 FlightPlan 表中的最新计划（官网提交的计划）。
@@ -1622,7 +1641,11 @@ class ClientHandler:
             return False
 
     async def _broadcast_plans_from_db(self):
-        """管制员上线: 广播所有飞行计划(每呼号最新一条), 让管制员看到全部机组计划。"""
+        """管制员上线: 广播所有飞行计划(每呼号最新一条), 让管制员看到全部机组计划。
+
+        2026-11-07 临时迁移：DB 不可用时回退到在线机组内存中的 FlightPlan。
+        """
+        sent = set()
         try:
             loop = asyncio.get_running_loop()
             plans = await loop.run_in_executor(None, db.get_online_flight_plans)
@@ -1639,8 +1662,35 @@ class ClientHandler:
                     f"{p.get('alternate') or ''}:{p.get('remarks') or ''}:{p.get('route') or ''}\r\n"
                 )
                 await self.send(line)
+                sent.add(callsign)
         except Exception:
             pass
+        # DB-less fallback：把在线机组内存里的计划也发给新上线的管制员
+        try:
+            for h in self.server.clients.values():
+                if h.client_type != CLIENT_PILOT or not h.client or not h.client.plan:
+                    continue
+                if h.callsign in sent:
+                    continue
+                line = self._fp_line_from_memory(h.callsign, h.client.plan)
+                if line:
+                    await self.send(line)
+        except Exception:
+            pass
+
+    def _fp_line_from_memory(self, callsign, fp):
+        """DB 不可用时：用在线机组内存里的 FlightPlan 构造 $FP 广播行（临时迁移模式）。"""
+        try:
+            ft = (str(getattr(fp, "type", "I") or "I"))[:1].upper() or "I"
+            dep_time = str(int(getattr(fp, "deptime", 0) or 0)).zfill(4)
+            return (
+                f"$FP{callsign}:0:{ft}:{getattr(fp, 'aircraft', '') or ''}:"
+                f"{getattr(fp, 'tascruise', '') or ''}:{getattr(fp, 'depairport', '') or ''}:{dep_time}:0:"
+                f"{getattr(fp, 'altitude', '') or ''}:{getattr(fp, 'destairport', '') or ''}:0:0:0:0:"
+                f"{getattr(fp, 'altairport', '') or ''}:{getattr(fp, 'remarks', '') or ''}:{getattr(fp, 'route', '') or ''}\r\n"
+            )
+        except Exception:
+            return ""
 
     async def _persist_plan(self, callsign, fp):
         """机组 $FP 落库 FlightPlan: userId 用当前认证客户的 cid(官网已直接入库)。"""
@@ -1657,21 +1707,34 @@ class ClientHandler:
         await self._broadcast_plan_event(callsign or self.callsign)
 
     async def _broadcast_plan_event(self, callsign):
-        """机组主动提交 $FP 后触发: 广播该呼号最新计划给所有在线 ATC。"""
+        """机组主动提交 $FP 后触发: 广播该呼号最新计划给所有在线 ATC。
+
+        2026-11-07 临时迁移：DB 不可用时回退到该机组内存中的 FlightPlan。
+        """
         try:
-            loop = asyncio.get_running_loop()
-            plans = await loop.run_in_executor(None, db.get_plan_by_callsign, callsign)
-            if not plans:
+            line = ""
+            try:
+                loop = asyncio.get_running_loop()
+                plans = await loop.run_in_executor(None, db.get_plan_by_callsign, callsign)
+                if plans:
+                    p = plans[0]
+                    ft = 'I' if str(p.get("flightType") or "").upper().startswith('I') else 'V'
+                    dep_time = str(p.get("depTime") or "")[:4]
+                    line = (
+                        f"$FP{callsign}:0:{ft}:{p.get('aircraft') or ''}:"
+                        f"{p.get('cruiseSpeed') or ''}:{p.get('depIcao') or ''}:{dep_time}:0:"
+                        f"{p.get('cruiseAlt') or ''}:{p.get('arrIcao') or ''}:0:0:0:0:"
+                        f"{p.get('alternate') or ''}:{p.get('remarks') or ''}:{p.get('route') or ''}\r\n"
+                    )
+            except Exception:
+                line = ""
+            if not line:
+                for h in self.server.clients.values():
+                    if h.callsign == callsign and h.client and h.client.plan:
+                        line = self._fp_line_from_memory(callsign, h.client.plan)
+                        break
+            if not line:
                 return
-            p = plans[0]
-            ft = 'I' if str(p.get("flightType") or "").upper().startswith('I') else 'V'
-            dep_time = str(p.get("depTime") or "")[:4]
-            line = (
-                f"$FP{callsign}:0:{ft}:{p.get('aircraft') or ''}:"
-                f"{p.get('cruiseSpeed') or ''}:{p.get('depIcao') or ''}:{dep_time}:0:"
-                f"{p.get('cruiseAlt') or ''}:{p.get('arrIcao') or ''}:0:0:0:0:"
-                f"{p.get('alternate') or ''}:{p.get('remarks') or ''}:{p.get('route') or ''}\r\n"
-            )
             for h in self.server.clients.values():
                 if h.client_type == CLIENT_ATC:
                     asyncio.ensure_future(h.send(line))
